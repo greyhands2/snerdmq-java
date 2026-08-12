@@ -1,0 +1,2 @@
+{"taskId":"java-job-1","retryCount":0,"maxRetries":3,"retryAfterHours":0.0,"retryAfterTime":"2026-08-12T17:32:16.918176Z","taskData":"{\"user_id\":\"java_master\",\"message\":\"James Gosling\"}","taskType":"test_java_job"}
+{"taskId":"java-job-1","retryCount":0,"maxRetries":3,"retryAfterHours":0.0,"retryAfterTime":"2026-08-12T17:32:16.918176Z","taskData":"{\"user_id\":\"java_master\",\"message\":\"James Gosling\"}","taskType":"test_java_job","deletedAt":"2026-08-12T17:32:16.929013Z"}

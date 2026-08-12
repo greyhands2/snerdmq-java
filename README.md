@@ -1,1 +1,92 @@
-# snerdmq-java
+<div align="center">
+  <h1>☕ SnerdMQ Java & Kotlin SDK</h1>
+  <p>A zero-config, C-speed background job queue for the JVM. Ditch Redis and heavy queue workers for a simple, embedded Rust daemon.</p>
+</div>
+
+This is the official JVM SDK wrapper for **SnerdMQ**. It handles all JSON-RPC communication and `ProcessBuilder` orchestration so you can write lightning-fast background jobs in Java, Kotlin, or Scala without managing any external databases like Redis or ActiveMQ.
+
+## ✨ Features
+- **Ditch Redis**: Gives your Spring Boot or Ktor apps persistent state, automatic retries, and dead-letter queues right out of the box with zero external infrastructure.
+- **Zero Rust Required**: Our built-in `SnerdmqInstaller` class automatically downloads the pre-compiled C-speed Rust binary for your OS.
+- **Thread-Safe**: Built on top of native Java `ExecutorService` and `ProcessBuilder`, it is heavily optimized for massively concurrent enterprise workloads.
+
+## 📦 Installation
+
+This package is designed to work flawlessly in both modern Gradle projects and legacy Maven projects!
+
+### Option A: Gradle (Modern)
+Add the dependency to your `build.gradle`:
+```groovy
+dependencies {
+    implementation 'com.greyhands2:snerdmq:1.0.0'
+}
+```
+
+### Option B: Maven (Enterprise)
+Add the dependency to your `pom.xml`:
+```xml
+<dependency>
+    <groupId>com.greyhands2</groupId>
+    <artifactId>snerdmq</artifactId>
+    <version>1.0.0</version>
+</dependency>
+```
+
+---
+
+## ⚡ Quickstart
+
+Using the SDK is incredibly simple. Initialize the queue, register your Consumer callbacks, and start listening!
+
+```java
+import snerdmq.SnerdQueue;
+import snerdmq.SnerdmqInstaller;
+
+public class App {
+    public static void main(String[] args) throws Exception {
+        // 1. (Optional) Download the Rust daemon to the user's ~/.snerdmq folder
+        SnerdmqInstaller.ensureDownloaded();
+
+        // 2. Initialize the daemon in the background
+        SnerdQueue queue = new SnerdQueue();
+
+        // 3. Register your background job logic
+        queue.registerHandler("send_email", (jsonData) -> {
+            System.out.println("Executing background job with payload: " + jsonData);
+            // Throw a RuntimeException here to automatically trigger SnerdMQ's retry logic!
+        });
+
+        // 4. Start the async Listener threads
+        queue.startListening();
+        System.out.println("SnerdMQ Java SDK is listening for jobs...");
+
+        // 5. Enqueue a job from anywhere in your codebase
+        queue.enqueue(
+            "email-123",
+            "send_email",
+            "{\"to\":\"james.gosling@java.com\",\"subject\":\"SnerdMQ Update\"}",
+            3,    // max retries
+            0.0   // retry after hours
+        );
+        
+        // Let the application run
+        Thread.sleep(Long.MAX_VALUE);
+    }
+}
+```
+
+---
+
+## 🌍 Advanced: Distributed Scaling
+
+By default, the SDK spins up the Rust daemon which writes the queue to a local file (`.snerdata/tasks/tasks.log`). 
+
+If you have multiple Java microservices running behind a load balancer and want them to share the exact same queue, simply mount a **Shared Network Drive** (like AWS EFS or NFS) to all of your servers and pass the shared path:
+
+```java
+// All of your JVM servers point to the exact same shared file!
+// SnerdMQ's native OS file-locking guarantees zero data corruption.
+SnerdQueue queue = new SnerdQueue(null, "/mnt/aws-efs-shared-drive/snerd_tasks.log");
+```
+
+*Built with ❤️ for John Wick tier engineering.*
