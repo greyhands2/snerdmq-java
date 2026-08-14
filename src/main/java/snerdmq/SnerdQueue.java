@@ -103,6 +103,10 @@ public class SnerdQueue {
     }
 
     public CompletableFuture<Void> enqueue(String taskId, String taskType, String jsonData, int maxRetries, double retryAfterHours, String rateLimitGroup, Integer maxPerMinute, Boolean autoDedupe) {
+        return enqueue(taskId, taskType, jsonData, maxRetries, retryAfterHours, rateLimitGroup, maxPerMinute, autoDedupe, null);
+    }
+
+    public CompletableFuture<Void> enqueue(String taskId, String taskType, String jsonData, int maxRetries, double retryAfterHours, String rateLimitGroup, Integer maxPerMinute, Boolean autoDedupe, Double urgencyScore) {
         if (process == null || !process.isAlive() || isShuttingDown) {
             CompletableFuture<Void> future = new CompletableFuture<>();
             future.completeExceptionally(new RuntimeException("[Snerd] Cannot enqueue task: Queue is not running."));
@@ -130,6 +134,7 @@ public class SnerdQueue {
         }
         
         if (autoDedupe != null) { jsonBuilder.append(String.format(",\"auto_dedupe\":%b", autoDedupe)); }
+        if (urgencyScore != null) { jsonBuilder.append(String.format(java.util.Locale.US, ",\"urgency_score\":%.2f", urgencyScore)); }
         jsonBuilder.append("}");
         
         sendMessage(jsonBuilder.toString());
