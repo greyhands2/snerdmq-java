@@ -93,6 +93,10 @@ public class SnerdQueue {
     }
 
     public void enqueue(String taskId, String taskType, String jsonData, int maxRetries, double retryAfterHours) {
+        enqueue(taskId, taskType, jsonData, maxRetries, retryAfterHours, null, null);
+    }
+
+    public void enqueue(String taskId, String taskType, String jsonData, int maxRetries, double retryAfterHours, String rateLimitGroup, Integer maxPerMinute) {
         if (process == null || !process.isAlive() || isShuttingDown) {
             throw new RuntimeException("[Snerd] Cannot enqueue task: Queue is not running.");
         }
@@ -100,12 +104,23 @@ public class SnerdQueue {
         // We escape the inner JSON string safely
         String escapedJson = jsonData.replace("\"", "\\\"");
         
-        String msg = String.format(
+        StringBuilder jsonBuilder = new StringBuilder();
+        jsonBuilder.append(String.format(
             Locale.US,
-            "{\"action\":\"enqueue\",\"task_id\":\"%s\",\"task_type\":\"%s\",\"task_data\":\"%s\",\"max_retries\":%d,\"retry_after_hours\":%.2f}",
+            "{\"action\":\"enqueue\",\"task_id\":\"%s\",\"task_type\":\"%s\",\"task_data\":\"%s\",\"max_retries\":%d,\"retry_after_hours\":%.2f",
             taskId, taskType, escapedJson, maxRetries, retryAfterHours
-        );
-        sendMessage(msg);
+        ));
+        
+        if (rateLimitGroup != null) {
+            jsonBuilder.append(String.format(",\"rate_limit_group\":\"%s\"", rateLimitGroup));
+        }
+        if (maxPerMinute != null) {
+            jsonBuilder.append(String.format(",\"max_per_minute\":%d", maxPerMinute));
+        }
+        
+        jsonBuilder.append("}");
+        
+        sendMessage(jsonBuilder.toString());
     }
 
     public void shutdown() {
