@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
@@ -28,6 +29,7 @@ public class SnerdQueue {
     private ExecutorService stdoutReaderPool;
     private ExecutorService jobExecutionPool;
     private volatile boolean isShuttingDown = false;
+    private final Map<String, CompletableFuture<Void>> pendingEnqueues = new ConcurrentHashMap<>();
 
     public SnerdQueue() throws IOException, InterruptedException {
         this(null, null);
@@ -92,14 +94,23 @@ public class SnerdQueue {
         }
     }
 
-    public void enqueue(String taskId, String taskType, String jsonData, int maxRetries, double retryAfterHours) {
-        enqueue(taskId, taskType, jsonData, maxRetries, retryAfterHours, null, null);
+    public CompletableFuture<Void> enqueue(String taskId, String taskType, String jsonData, int maxRetries, double retryAfterHours) {
+        return enqueue(taskId, taskType, jsonData, maxRetries, retryAfterHours, null, null, null);
     }
 
-    public void enqueue(String taskId, String taskType, String jsonData, int maxRetries, double retryAfterHours, String rateLimitGroup, Integer maxPerMinute) {
+    public CompletableFuture<Void> enqueue(String taskId, String taskType, String jsonData, int maxRetries, double retryAfterHours, String rateLimitGroup, Integer maxPerMinute) {
+        return enqueue(taskId, taskType, jsonData, maxRetries, retryAfterHours, rateLimitGroup, maxPerMinute, null);
+    }
+
+    public CompletableFuture<Void> enqueue(String taskId, String taskType, String jsonData, int maxRetries, double retryAfterHours, String rateLimitGroup, Integer maxPerMinute, Boolean autoDedupe) {
         if (process == null || !process.isAlive() || isShuttingDown) {
-            throw new RuntimeException("[Snerd] Cannot enqueue task: Queue is not running.");
+            CompletableFuture<Void> future = new CompletableFuture<>();
+            future.completeExceptionally(new RuntimeException("[Snerd] Cannot enqueue task: Queue is not running."));
+            return future;
         }
+
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        pendingEnqueues.put(taskId, future);
 
         // We escape the inner JSON string safely
         String escapedJson = jsonData.replace("\"", "\\\"");
@@ -118,9 +129,11 @@ public class SnerdQueue {
             jsonBuilder.append(String.format(",\"max_per_minute\":%d", maxPerMinute));
         }
         
+        if (autoDedupe != null) { jsonBuilder.append(String.format(",\"auto_dedupe\":%b", autoDedupe)); }
         jsonBuilder.append("}");
         
         sendMessage(jsonBuilder.toString());
+        return future;
     }
 
     public void shutdown() {
@@ -181,6 +194,21 @@ public class SnerdQueue {
                 }
             });
             
+        } else if (action.equals("ack")) {
+            String taskId = extractJsonField(line, "task_id");
+            if (taskId != null) {
+                CompletableFuture<Void> future = pendingEnqueues.remove(taskId);
+                if (future != null) future.complete(null);
+            }
+        } else if (action.equals("error")) {
+            String taskId = extractJsonField(line, "task_id");
+            String message = extractJsonField(line, "message");
+            if (taskId != null) {
+                CompletableFuture<Void> future = pendingEnqueues.remove(taskId);
+                if (future != null) future.completeExceptionally(new RuntimeException(message));
+            } else {
+                System.err.println("[Snerd] Error from engine: " + message);
+            }
         } else if (action.equals("max_retries_reached")) {
             String taskId = extractJsonField(line, "task_id");
             String taskType = extractJsonField(line, "task_type");
