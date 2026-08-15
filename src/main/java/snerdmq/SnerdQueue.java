@@ -29,6 +29,7 @@ public class SnerdQueue {
     private String binaryPath;
     private String storagePath;
     private final Map<String, Consumer<String>> handlers = new ConcurrentHashMap<>();
+    private final Map<String, Consumer<String>> maxRetryHandlers = new ConcurrentHashMap<>();
     private static final ThreadLocal<String> currentTaskId = new ThreadLocal<>();
     private final Set<WsContext> wsClients = ConcurrentHashMap.newKeySet();
 
@@ -68,6 +69,10 @@ public class SnerdQueue {
         if (process != null && process.isAlive() && !isShuttingDown) {
             sendMessage(String.format("{\"action\":\"register\",\"task_type\":\"%s\"}", taskType));
         }
+    }
+
+    public void registerMaxRetryHandler(String taskType, Consumer<String> callback) {
+        maxRetryHandlers.put(taskType, callback);
     }
 
     public void startListening() throws IOException {
@@ -234,7 +239,22 @@ public class SnerdQueue {
         } else if (action.equals("max_retries_reached")) {
             String taskId = extractJsonField(line, "task_id");
             String taskType = extractJsonField(line, "task_type");
-            System.out.println("[Snerd] Dead Letter Queue: Task " + taskId + " (" + taskType + ") permanently failed.");
+            
+            Consumer<String> handler = maxRetryHandlers.get(taskType);
+            if (handler != null && taskId != null) {
+                String taskData = extractJsonField(line, "task_data");
+                jobExecutionPool.submit(() -> {
+                    try {
+                        currentTaskId.set(taskId);
+                        String unescapedData = taskData != null ? taskData.replace("\\\"", "\"").replace("\\\\", "\\") : "";
+                        handler.accept(unescapedData);
+                    } catch (Exception e) {
+                        System.err.println("[Snerd] Error in max retry handler for task " + taskId + ": " + e.getMessage());
+                    }
+                });
+            } else {
+                System.out.println("[Snerd] Dead Letter Queue: Task " + taskId + " (" + taskType + ") permanently failed.");
+            }
         }
     }
 
