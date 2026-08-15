@@ -1,14 +1,26 @@
 <div align="center">
-  <h1>☕ SnerdMQ Java & Kotlin SDK</h1>
+  <img src="./assets/Designer-9.png" height="120" alt="SnerdMQ Java Logo" />
+  <h1>☕ SnerdMQ Java & Kotlin SDK v0.2.0</h1>
   <p>A zero-config, C-speed background job queue for the JVM. Ditch Redis and heavy queue workers for a simple, embedded Rust daemon.</p>
 </div>
 
 This is the official JVM SDK wrapper for **SnerdMQ**. It handles all JSON-RPC communication and `ProcessBuilder` orchestration so you can write lightning-fast background jobs in Java, Kotlin, or Scala without managing any external databases like Redis or ActiveMQ.
 
-## ✨ Features
+## ✨ v0.2.0 AI-Era Features
+- **Smart API Rate-Limiting**: Natively tracks `rateLimitGroup` execution velocity to prevent 429 "Too Many Requests" API errors.
+- **Payload-Hashing Deduplication**: Automatically computes cryptographic hashes to drop duplicate tasks instantly.
+- **Dynamic Float Prioritization**: A native Binary Max-Heap bypasses standard FIFO rules for high urgency tasks.
 - **Ditch Redis**: Gives your Spring Boot or Ktor apps persistent state, automatic retries, and dead-letter queues right out of the box with zero external infrastructure.
 - **Zero Rust Required**: Our built-in `SnerdmqInstaller` class automatically downloads the pre-compiled C-speed Rust binary for your OS.
 - **Thread-Safe**: Built on top of native Java `ExecutorService` and `ProcessBuilder`, it is heavily optimized for massively concurrent enterprise workloads.
+
+### ⚙️ Advanced Task Configuration (v0.2.0)
+To power complex AI workflows, tasks can now be configured with advanced orchestration parameters:
+
+* **`autoDedupe` (`Boolean`)**: If set to `true`, the daemon computes a cryptographic hash of the `taskType` and `data`. If an identical payload is currently sitting in the queue pending execution, this new task is silently dropped. Excellent for preventing duplicate generative AI requests from trigger-happy users!
+* **`urgencyScore` (`Double`)**: A value (e.g. `0.99`) used to bypass the standard FIFO queue. SnerdMQ uses a true Binary Max-Heap to continually float tasks with the highest urgency score to the very front of the execution line. Standard tasks default to `0.0`.
+* **`rateLimitGroup` (`String`)**: A custom string (e.g. `"openai_api"` or `"db_writes"`) that groups tasks together for backpressure control.
+* **`maxPerMinute` (`Integer`)**: Used in conjunction with `rateLimitGroup`. If the queue processes more tasks in this group than the allowed limit within a 60-second rolling window, further tasks in this group are temporarily paused. This natively prevents 429 "Too Many Requests" errors when bursting third-party APIs.
 
 ## 📦 Installation
 
@@ -18,7 +30,7 @@ This package is designed to work flawlessly in both modern Gradle projects and l
 Add the dependency to your `build.gradle`:
 ```groovy
 dependencies {
-    implementation 'io.github.greyhands2:snerdmq:1.0.0'
+    implementation 'io.github.greyhands2:snerdmq:0.2.0'
 }
 ```
 
@@ -28,7 +40,7 @@ Add the dependency to your `pom.xml`:
 <dependency>
     <groupId>io.github.greyhands2</groupId>
     <artifactId>snerdmq</artifactId>
-    <version>1.0.0</version>
+    <version>0.2.0</version>
 </dependency>
 ```
 
@@ -60,13 +72,17 @@ public class App {
         queue.startListening();
         System.out.println("SnerdMQ Java SDK is listening for jobs...");
 
-        // 5. Enqueue a job from anywhere in your codebase
+        // 5. Enqueue a job from anywhere in your codebase (Now with v0.2.0 AI Features!)
         queue.enqueue(
             "email-123",
             "send_email",
             "{\"to\":\"james.gosling@java.com\",\"subject\":\"SnerdMQ Update\"}",
-            3,    // max retries
-            0.0   // retry after hours
+            3,              // max retries
+            0.0,            // retry after hours
+            "email_api",    // rateLimitGroup
+            100,            // maxPerMinute
+            true,           // autoDedupe
+            0.99            // urgencyScore
         );
         
         // Let the application run

@@ -16,11 +16,22 @@ import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.Path;
+import java.util.Collections;
+import java.util.Set;
+import io.javalin.Javalin;
+import io.javalin.websocket.WsContext;
+
 
 public class SnerdQueue {
     private String binaryPath;
     private String storagePath;
     private final Map<String, Consumer<String>> handlers = new ConcurrentHashMap<>();
+    private static final ThreadLocal<String> currentTaskId = new ThreadLocal<>();
+    private final Set<WsContext> wsClients = ConcurrentHashMap.newKeySet();
+
     
     private Process process;
     private BufferedWriter writer;
@@ -189,7 +200,7 @@ public class SnerdQueue {
             // Execute on the cached thread pool so we don't block the stdout reader!
             jobExecutionPool.submit(() -> {
                 try {
-                    // taskData is typically returned as an escaped string from our simple regex
+                    currentTaskId.set(taskId);
                     String unescapedData = taskData != null ? taskData.replace("\\\"", "\"").replace("\\\\", "\\") : "";
                     handler.accept(unescapedData);
                     sendMessage(String.format("{\"action\":\"result\",\"task_id\":\"%s\",\"status\":\"success\"}", taskId));
@@ -214,6 +225,12 @@ public class SnerdQueue {
             } else {
                 System.err.println("[Snerd] Error from engine: " + message);
             }
+        } else if (action.equals("progress")) {
+            for (WsContext ctx : wsClients) {
+                if (ctx.session.isOpen()) {
+                    ctx.send(line); // Forward the raw JSON string
+                }
+            }
         } else if (action.equals("max_retries_reached")) {
             String taskId = extractJsonField(line, "task_id");
             String taskType = extractJsonField(line, "task_type");
@@ -230,4 +247,105 @@ public class SnerdQueue {
         }
         return null;
     }
+
+    public void yieldProgress(String data) {
+        String taskId = currentTaskId.get();
+        if (taskId == null) {
+            throw new RuntimeException("[Snerd] yieldProgress must be called within a task handler context.");
+        }
+        
+        String escapedData = data != null ? data.replace("\"", "\\\"") : "";
+        String msg = String.format("{\"action\":\"progress\",\"task_id\":\"%s\",\"data\":\"%s\"}", taskId, escapedData);
+        sendMessage(msg);
+    }
+
+    public void startDashboard(int port) {
+        Javalin app = Javalin.create(config -> {
+            config.plugins.enableCors(cors -> {
+                cors.add(it -> it.anyHost());
+            });
+        }).start(port);
+
+        app.get("/", ctx -> {
+            Path htmlPath = Paths.get(System.getProperty("user.dir"), "static", "index.html");
+            if (Files.exists(htmlPath)) {
+                ctx.contentType("text/html");
+                ctx.result(Files.readString(htmlPath));
+            } else {
+                ctx.status(404).result("Dashboard UI not found in static folder.");
+            }
+        });
+
+        app.get("/api/stats", ctx -> {
+            int enqueued = 0, processed = 0, failed = 0;
+            Path tasksPath = Paths.get(this.storagePath != null ? this.storagePath : "./.snerdata", "tasks", "tasks.log");
+            if (Files.exists(tasksPath)) {
+                try {
+                    for (String line : Files.readAllLines(tasksPath)) {
+                        if (line.trim().isEmpty()) continue;
+                        enqueued++;
+                        if (line.contains("\"deletedAt\":\"")) {
+                            if (line.contains("\"lastJobError\":\"")) {
+                                failed++;
+                            } else {
+                                processed++;
+                            }
+                        }
+                    }
+                } catch (Exception e) {}
+            }
+            String result = String.format("{\"enqueued\":%d,\"processed\":%d,\"failed\":%d}", enqueued, processed, failed);
+            ctx.contentType("application/json").result(result);
+        });
+
+        app.get("/api/tasks", ctx -> {
+            Map<String, String> tasksMap = new java.util.LinkedHashMap<>();
+            Path tasksPath = Paths.get(this.storagePath != null ? this.storagePath : "./.snerdata", "tasks", "tasks.log");
+            if (Files.exists(tasksPath)) {
+                try {
+                    for (String line : Files.readAllLines(tasksPath)) {
+                        if (line.trim().isEmpty()) continue;
+                        String tId = extractJsonField(line, "taskId");
+                        if (tId != null) tasksMap.put(tId, line);
+                    }
+                } catch (Exception e) {}
+            }
+
+            StringBuilder sb = new StringBuilder("[");
+            boolean first = true;
+            for (String t : tasksMap.values()) {
+                String tId = extractJsonField(t, "taskId");
+                String tType = extractJsonField(t, "taskType");
+                String status;
+                if (t.contains("\"deletedAt\":\"")) {
+                    status = t.contains("\"lastJobError\":\"") ? "failed" : "completed";
+                } else {
+                    status = t.contains("\"lastJobError\":\"") ? "failed" : "queued";
+                }
+                
+                String rCount = extractJsonField(t, "retryCount");
+                String mRetries = extractJsonField(t, "maxRetries");
+                String rAfter = extractJsonField(t, "retryAfterTime");
+                
+                if (!first) sb.append(",");
+                sb.append(String.format("{\"id\":\"%s\",\"type\":\"%s\",\"status\":\"%s\",\"progress\":0", tId, tType, status));
+                if (rCount != null) sb.append(",\"retryCount\":").append(rCount);
+                if (mRetries != null) sb.append(",\"maxRetries\":").append(mRetries);
+                if (rAfter != null) sb.append(",\"retryAfterTime\":\"").append(rAfter).append("\"");
+                sb.append("}");
+                first = false;
+            }
+            sb.append("]");
+            ctx.contentType("application/json").result(sb.toString());
+        });
+
+        app.ws("/ws", ws -> {
+            ws.onConnect(ctx -> wsClients.add(ctx));
+            ws.onClose(ctx -> wsClients.remove(ctx));
+            ws.onError(ctx -> wsClients.remove(ctx));
+        });
+
+        System.out.println("[Snerd] Dashboard running on http://localhost:" + port);
+    }
+
 }
