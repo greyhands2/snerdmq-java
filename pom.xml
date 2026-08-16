@@ -6,7 +6,7 @@
 
     <groupId>io.github.greyhands2</groupId>
     <artifactId>snerdmq</artifactId>
-    <version>0.2.0</version>
+    <version>1.0.1</version>
     <packaging>jar</packaging>
 
     <name>SnerdMQ Java SDK</name>

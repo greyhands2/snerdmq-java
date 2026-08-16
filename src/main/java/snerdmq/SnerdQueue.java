@@ -123,6 +123,10 @@ public class SnerdQueue {
     }
 
     public CompletableFuture<Void> enqueue(String taskId, String taskType, String jsonData, int maxRetries, double retryAfterHours, String rateLimitGroup, Integer maxPerMinute, Boolean autoDedupe, Double urgencyScore) {
+        return enqueue(taskId, taskType, jsonData, maxRetries, retryAfterHours, rateLimitGroup, maxPerMinute, autoDedupe, urgencyScore, null, null);
+    }
+
+    public CompletableFuture<Void> enqueue(String taskId, String taskType, String jsonData, int maxRetries, double retryAfterHours, String rateLimitGroup, Integer maxPerMinute, Boolean autoDedupe, Double urgencyScore, String executeAt, String cron) {
         if (process == null || !process.isAlive() || isShuttingDown) {
             CompletableFuture<Void> future = new CompletableFuture<>();
             future.completeExceptionally(new RuntimeException("[Snerd] Cannot enqueue task: Queue is not running."));
@@ -151,6 +155,8 @@ public class SnerdQueue {
         
         if (autoDedupe != null) { jsonBuilder.append(String.format(",\"auto_dedupe\":%b", autoDedupe)); }
         if (urgencyScore != null) { jsonBuilder.append(String.format(java.util.Locale.US, ",\"urgency_score\":%.2f", urgencyScore)); }
+        if (executeAt != null) { jsonBuilder.append(String.format(",\"execute_at\":\"%s\"", executeAt)); }
+        if (cron != null) { jsonBuilder.append(String.format(",\"cron\":\"%s\"", cron)); }
         jsonBuilder.append("}");
         
         sendMessage(jsonBuilder.toString());
