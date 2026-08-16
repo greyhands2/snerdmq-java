@@ -1,12 +1,12 @@
 <div align="center">
   <img src="./assets/Designer-9.png" height="120" alt="SnerdMQ Java Logo" />
-  <h1>☕ SnerdMQ Java & Kotlin SDK v0.2.1</h1>
+  <h1>☕ SnerdMQ Java & Kotlin SDK v1.0.1</h1>
   <p>A zero-config, C-speed background job queue for the JVM. Ditch Redis and heavy queue workers for a simple, embedded Rust daemon.</p>
 </div>
 
 This is the official JVM SDK wrapper for **SnerdMQ**. It handles all JSON-RPC communication and `ProcessBuilder` orchestration so you can write lightning-fast background jobs in Java, Kotlin, or Scala without managing any external databases like Redis or ActiveMQ.
 
-## ✨ v0.2.1 AI-Era Features
+## ✨ v1.0.1 AI Features
 - **Smart API Rate-Limiting**: Natively tracks `rateLimitGroup` execution velocity to prevent 429 "Too Many Requests" API errors.
 - **Payload-Hashing Deduplication**: Automatically computes cryptographic hashes to drop duplicate tasks instantly.
 - **Dynamic Float Prioritization**: A native Binary Max-Heap bypasses standard FIFO rules for high urgency tasks.
@@ -14,13 +14,21 @@ This is the official JVM SDK wrapper for **SnerdMQ**. It handles all JSON-RPC co
 - **Zero Rust Required**: Our built-in `SnerdmqInstaller` class automatically downloads the pre-compiled C-speed Rust binary for your OS.
 - **Thread-Safe**: Built on top of native Java `ExecutorService` and `ProcessBuilder`, it is heavily optimized for massively concurrent enterprise workloads.
 
-### ⚙️ Advanced Task Configuration (v0.2.1)
+### ⚙️ Advanced Task Configuration (v1.0.1)
 To power complex AI workflows, tasks can now be configured with advanced orchestration parameters:
 
 * **`autoDedupe` (`Boolean`)**: If set to `true`, the daemon computes a cryptographic hash of the `taskType` and `data`. If an identical payload is currently sitting in the queue pending execution, this new task is silently dropped. Excellent for preventing duplicate generative AI requests from trigger-happy users!
 * **`urgencyScore` (`Double`)**: A value (e.g. `0.99`) used to bypass the standard FIFO queue. SnerdMQ uses a true Binary Max-Heap to continually float tasks with the highest urgency score to the very front of the execution line. Standard tasks default to `0.0`.
 * **`rateLimitGroup` (`String`)**: A custom string (e.g. `"openai_api"` or `"db_writes"`) that groups tasks together for backpressure control.
 * **`maxPerMinute` (`Integer`)**: Used in conjunction with `rateLimitGroup`. If the queue processes more tasks in this group than the allowed limit within a 60-second rolling window, further tasks in this group are temporarily paused. This natively prevents 429 "Too Many Requests" errors when bursting third-party APIs.
+* **`executeAt` (`String` | `DateTime`)**: A timestamp of when the job should be executed in the future.
+* **`cron` (`String`)**: A cron expression (e.g. `"0 * * * *"`) for recurring jobs. Shorthands like `"2h"` or `"10m"` are also supported.
+
+### 🕒 Cron Jobs vs. Retryable Jobs
+When using the new scheduling features, it is important to understand the difference between Cron and Retry behaviors:
+> - **A Cron Job** is a *Repeatable Job* that executes again **only after a success**, on a fixed schedule.
+> - **A Retryable Job** is a *Recovery Job* that executes again **only after a failure**, attempting to recover using the `retryAfterHours` backoff.
+> - **Combined:** If a Cron Job fails, it temporarily uses `retryAfterHours` to retry until it recovers. Once it succeeds, it goes back to ticking on its standard cron schedule!
 
 ## 📦 Installation
 
@@ -30,7 +38,7 @@ This package is designed to work flawlessly in both modern Gradle projects and l
 Add the dependency to your `build.gradle`:
 ```groovy
 dependencies {
-    implementation 'io.github.greyhands2:snerdmq:0.2.1'
+    implementation 'io.github.greyhands2:snerdmq:1.0.1'
 }
 ```
 
@@ -40,7 +48,7 @@ Add the dependency to your `pom.xml`:
 <dependency>
     <groupId>io.github.greyhands2</groupId>
     <artifactId>snerdmq</artifactId>
-    <version>0.2.1</version>
+    <version>1.0.1</version>
 </dependency>
 ```
 
@@ -72,7 +80,7 @@ public class App {
         queue.startListening();
         System.out.println("SnerdMQ Java SDK is listening for jobs...");
 
-        // 5. Enqueue a job from anywhere in your codebase (Now with v0.2.1 AI Features!)
+        // 5. Enqueue a job from anywhere in your codebase (Now with v1.0.1 AI Features!)
         queue.enqueue(
             "email-123",
             "send_email",
@@ -82,7 +90,9 @@ public class App {
             "email_api",    // rateLimitGroup
             100,            // maxPerMinute
             true,           // autoDedupe
-            0.99            // urgencyScore
+            0.99,           // urgencyScore
+            null,           // executeAt
+            "1h"            // cron: Runs every 1 hour!
         );
         
         // Let the application run
