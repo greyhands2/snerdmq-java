@@ -111,22 +111,22 @@ public class SnerdQueue {
     }
 
     public CompletableFuture<Void> enqueue(String taskId, String taskType, String jsonData, int maxRetries, double retryAfterHours) {
-        return enqueue(taskId, taskType, jsonData, maxRetries, retryAfterHours, null, null, null);
+        return enqueue(taskId, taskType, jsonData, maxRetries, retryAfterHours, null, null, null, null, null, null, null);
     }
 
     public CompletableFuture<Void> enqueue(String taskId, String taskType, String jsonData, int maxRetries, double retryAfterHours, String rateLimitGroup, Integer maxPerMinute) {
-        return enqueue(taskId, taskType, jsonData, maxRetries, retryAfterHours, rateLimitGroup, maxPerMinute, null);
+        return enqueue(taskId, taskType, jsonData, maxRetries, retryAfterHours, rateLimitGroup, maxPerMinute, null, null, null, null, null);
     }
 
     public CompletableFuture<Void> enqueue(String taskId, String taskType, String jsonData, int maxRetries, double retryAfterHours, String rateLimitGroup, Integer maxPerMinute, Boolean autoDedupe) {
-        return enqueue(taskId, taskType, jsonData, maxRetries, retryAfterHours, rateLimitGroup, maxPerMinute, autoDedupe, null);
+        return enqueue(taskId, taskType, jsonData, maxRetries, retryAfterHours, rateLimitGroup, maxPerMinute, autoDedupe, null, null, null, null);
     }
 
     public CompletableFuture<Void> enqueue(String taskId, String taskType, String jsonData, int maxRetries, double retryAfterHours, String rateLimitGroup, Integer maxPerMinute, Boolean autoDedupe, Double urgencyScore) {
-        return enqueue(taskId, taskType, jsonData, maxRetries, retryAfterHours, rateLimitGroup, maxPerMinute, autoDedupe, urgencyScore, null, null);
+        return enqueue(taskId, taskType, jsonData, maxRetries, retryAfterHours, rateLimitGroup, maxPerMinute, autoDedupe, urgencyScore, null, null, null);
     }
 
-    public CompletableFuture<Void> enqueue(String taskId, String taskType, String jsonData, int maxRetries, double retryAfterHours, String rateLimitGroup, Integer maxPerMinute, Boolean autoDedupe, Double urgencyScore, String executeAt, String cron) {
+    public CompletableFuture<Void> enqueue(String taskId, String taskType, String jsonData, int maxRetries, double retryAfterHours, String rateLimitGroup, Integer maxPerMinute, Boolean autoDedupe, Double urgencyScore, String executeAt, String cron, String webhookUrl) {
         if (process == null || !process.isAlive() || isShuttingDown) {
             CompletableFuture<Void> future = new CompletableFuture<>();
             future.completeExceptionally(new RuntimeException("[Snerd] Cannot enqueue task: Queue is not running."));
@@ -157,6 +157,7 @@ public class SnerdQueue {
         if (urgencyScore != null) { jsonBuilder.append(String.format(java.util.Locale.US, ",\"urgency_score\":%.2f", urgencyScore)); }
         if (executeAt != null) { jsonBuilder.append(String.format(",\"execute_at\":\"%s\"", executeAt)); }
         if (cron != null) { jsonBuilder.append(String.format(",\"cron\":\"%s\"", cron)); }
+        if (webhookUrl != null) { jsonBuilder.append(String.format(",\"webhook_url\":\"%s\"", webhookUrl)); }
         jsonBuilder.append("}");
         
         sendMessage(jsonBuilder.toString());
