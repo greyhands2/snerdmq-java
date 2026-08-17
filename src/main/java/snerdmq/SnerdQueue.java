@@ -111,22 +111,22 @@ public class SnerdQueue {
     }
 
     public CompletableFuture<Void> enqueue(String taskId, String taskType, String jsonData, int maxRetries, double retryAfterHours) {
-        return enqueue(taskId, taskType, jsonData, maxRetries, retryAfterHours, null, null, null, null, null, null, null);
+        return enqueue(taskId, taskType, jsonData, maxRetries, retryAfterHours, null, null, null, null, null, null, null, null);
     }
 
     public CompletableFuture<Void> enqueue(String taskId, String taskType, String jsonData, int maxRetries, double retryAfterHours, String rateLimitGroup, Integer maxPerMinute) {
-        return enqueue(taskId, taskType, jsonData, maxRetries, retryAfterHours, rateLimitGroup, maxPerMinute, null, null, null, null, null);
+        return enqueue(taskId, taskType, jsonData, maxRetries, retryAfterHours, rateLimitGroup, maxPerMinute, null, null, null, null, null, null);
     }
 
     public CompletableFuture<Void> enqueue(String taskId, String taskType, String jsonData, int maxRetries, double retryAfterHours, String rateLimitGroup, Integer maxPerMinute, Boolean autoDedupe) {
-        return enqueue(taskId, taskType, jsonData, maxRetries, retryAfterHours, rateLimitGroup, maxPerMinute, autoDedupe, null, null, null, null);
+        return enqueue(taskId, taskType, jsonData, maxRetries, retryAfterHours, rateLimitGroup, maxPerMinute, autoDedupe, null, null, null, null, null);
     }
 
     public CompletableFuture<Void> enqueue(String taskId, String taskType, String jsonData, int maxRetries, double retryAfterHours, String rateLimitGroup, Integer maxPerMinute, Boolean autoDedupe, Double urgencyScore) {
-        return enqueue(taskId, taskType, jsonData, maxRetries, retryAfterHours, rateLimitGroup, maxPerMinute, autoDedupe, urgencyScore, null, null, null);
+        return enqueue(taskId, taskType, jsonData, maxRetries, retryAfterHours, rateLimitGroup, maxPerMinute, autoDedupe, urgencyScore, null, null, null, null);
     }
 
-    public CompletableFuture<Void> enqueue(String taskId, String taskType, String jsonData, int maxRetries, double retryAfterHours, String rateLimitGroup, Integer maxPerMinute, Boolean autoDedupe, Double urgencyScore, String executeAt, String cron, String webhookUrl) {
+    public CompletableFuture<Void> enqueue(String taskId, String taskType, String jsonData, int maxRetries, double retryAfterHours, String rateLimitGroup, Integer maxPerMinute, Boolean autoDedupe, Double urgencyScore, String executeAt, String cron, String webhookUrl, Integer maxExecutionSeconds) {
         if (process == null || !process.isAlive() || isShuttingDown) {
             CompletableFuture<Void> future = new CompletableFuture<>();
             future.completeExceptionally(new RuntimeException("[Snerd] Cannot enqueue task: Queue is not running."));
@@ -158,6 +158,7 @@ public class SnerdQueue {
         if (executeAt != null) { jsonBuilder.append(String.format(",\"execute_at\":\"%s\"", executeAt)); }
         if (cron != null) { jsonBuilder.append(String.format(",\"cron\":\"%s\"", cron)); }
         if (webhookUrl != null) { jsonBuilder.append(String.format(",\"webhook_url\":\"%s\"", webhookUrl)); }
+        if (maxExecutionSeconds != null) { jsonBuilder.append(String.format(",\"max_execution_seconds\":%d", maxExecutionSeconds)); }
         jsonBuilder.append("}");
         
         sendMessage(jsonBuilder.toString());
@@ -199,6 +200,8 @@ public class SnerdQueue {
             String taskId = extractJsonField(line, "task_id");
             String taskType = extractJsonField(line, "task_type");
             String taskData = extractJsonField(line, "task_data");
+            String maxExecutionStr = extractJsonNumberField(line, "max_execution_seconds");
+            Integer maxExecutionSeconds = maxExecutionStr != null ? Integer.parseInt(maxExecutionStr) : null;
 
             if (taskId == null || taskType == null) return;
 
@@ -210,15 +213,26 @@ public class SnerdQueue {
             }
 
             // Execute on the cached thread pool so we don't block the stdout reader!
-            jobExecutionPool.submit(() -> {
-                try {
-                    currentTaskId.set(taskId);
-                    String unescapedData = taskData != null ? taskData.replace("\\\"", "\"").replace("\\\\", "\\") : "";
-                    handler.accept(unescapedData);
+            CompletableFuture<Void> executionFuture = CompletableFuture.runAsync(() -> {
+                currentTaskId.set(taskId);
+                String unescapedData = taskData != null ? taskData.replace("\\\"", "\"").replace("\\\\", "\\") : "";
+                handler.accept(unescapedData);
+            }, jobExecutionPool);
+            
+            if (maxExecutionSeconds != null) {
+                executionFuture = executionFuture.orTimeout(maxExecutionSeconds, java.util.concurrent.TimeUnit.SECONDS);
+            }
+            
+            executionFuture.whenComplete((res, err) -> {
+                if (err != null) {
+                    if (err.getCause() instanceof java.util.concurrent.TimeoutException || err instanceof java.util.concurrent.TimeoutException) {
+                        sendMessage(String.format("{\"action\":\"result\",\"task_id\":\"%s\",\"status\":\"error\",\"error_msg\":\"Task execution timed out after %d seconds\"}", taskId, maxExecutionSeconds));
+                    } else {
+                        String errorMsg = err.getMessage() != null ? err.getMessage().replace("\"", "'") : "Unknown Exception";
+                        sendMessage(String.format("{\"action\":\"result\",\"task_id\":\"%s\",\"status\":\"error\",\"error_msg\":\"%s\"}", taskId, errorMsg));
+                    }
+                } else {
                     sendMessage(String.format("{\"action\":\"result\",\"task_id\":\"%s\",\"status\":\"success\"}", taskId));
-                } catch (Exception e) {
-                    String errorMsg = e.getMessage() != null ? e.getMessage().replace("\"", "'") : "Unknown Exception";
-                    sendMessage(String.format("{\"action\":\"result\",\"task_id\":\"%s\",\"status\":\"error\",\"error_msg\":\"%s\"}", taskId, errorMsg));
                 }
             });
             
@@ -268,6 +282,15 @@ public class SnerdQueue {
     // A lightweight helper to extract flat string fields from a JSON payload
     private String extractJsonField(String json, String key) {
         Pattern pattern = Pattern.compile("\"" + key + "\"\\s*:\\s*\"(.*?)(?<!\\\\)\"");
+        Matcher matcher = pattern.matcher(json);
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+        return null;
+    }
+
+    private String extractJsonNumberField(String json, String key) {
+        Pattern pattern = Pattern.compile("\"" + key + "\"\\s*:\\s*([0-9.]+)");
         Matcher matcher = pattern.matcher(json);
         if (matcher.find()) {
             return matcher.group(1);
