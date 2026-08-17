@@ -126,6 +126,10 @@ public class SnerdQueue {
         return enqueue(taskId, taskType, jsonData, maxRetries, retryAfterHours, rateLimitGroup, maxPerMinute, autoDedupe, urgencyScore, null, null, null, null);
     }
 
+    public CompletableFuture<Void> enqueue(String taskId, String taskType, String jsonData, int maxRetries, double retryAfterHours, String rateLimitGroup, Integer maxPerMinute, Boolean autoDedupe, Double urgencyScore, String executeAt, String cron, String webhookUrl) {
+        return enqueue(taskId, taskType, jsonData, maxRetries, retryAfterHours, rateLimitGroup, maxPerMinute, autoDedupe, urgencyScore, executeAt, cron, webhookUrl, null);
+    }
+
     public CompletableFuture<Void> enqueue(String taskId, String taskType, String jsonData, int maxRetries, double retryAfterHours, String rateLimitGroup, Integer maxPerMinute, Boolean autoDedupe, Double urgencyScore, String executeAt, String cron, String webhookUrl, Integer maxExecutionSeconds) {
         if (process == null || !process.isAlive() || isShuttingDown) {
             CompletableFuture<Void> future = new CompletableFuture<>();
