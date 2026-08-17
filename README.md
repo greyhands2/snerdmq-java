@@ -21,9 +21,13 @@ To power complex AI workflows, tasks can now be configured with advanced orchest
 * **`urgencyScore` (`Double`)**: A value (e.g. `0.99`) used to bypass the standard FIFO queue. SnerdMQ uses a true Binary Max-Heap to continually float tasks with the highest urgency score to the very front of the execution line. Standard tasks default to `0.0`.
 * **`rateLimitGroup` (`String`)**: A custom string (e.g. `"openai_api"` or `"db_writes"`) that groups tasks together for backpressure control.
 * **`maxPerMinute` (`Integer`)**: Used in conjunction with `rateLimitGroup`. If the queue processes more tasks in this group than the allowed limit within a 60-second rolling window, further tasks in this group are temporarily paused. This natively prevents 429 "Too Many Requests" errors when bursting third-party APIs.
-* **`executeAt` (`String` | `DateTime`)**: A timestamp of when the job should be executed in the future.
+* **`executeAt` (`String` | `java.time.Instant`)**: A timestamp of when the job should be executed in the future.
 * **`cron` (`String`)**: A cron expression (e.g. `"0 * * * *"`) for recurring jobs. Shorthands like `"2h"` or `"10m"` are also supported.
 * **`webhookUrl` (`String`)**: By providing a webhook URL, SnerdMQ will completely bypass your local Java handlers and dispatch the task payload via an HTTP POST request directly to the specified URL.
+* **`maxExecutionSeconds` (`Integer`)**: Optional hard timeout in seconds. If execution takes longer, it's marked as failed.
+
+### Note on Hard Timeouts (`maxExecutionSeconds`)
+When `maxExecutionSeconds` is provided, the Java SDK executes your handler using `CompletableFuture.orTimeout()`. If the task takes longer than the timeout, a `TimeoutException` is caught and the execution will be marked as failed. The background Rust daemon also enforces this timeout at the IPC level.
 
 ### 🌐 HTTP Webhooks (Serverless Execution)
 You can configure a task to execute externally via an HTTP POST request. By setting a `webhookUrl`, the internal background processor will skip any registered handlers (`queue.registerHandler`) and directly invoke the HTTP endpoint.
@@ -97,9 +101,10 @@ public class App {
             100,            // maxPerMinute
             true,           // autoDedupe
             0.99,           // urgencyScore
-            null,           // executeAt
-            "1h",           // cron: Runs every 1 hour!
-            "https://api.example.com/webhook" // webhookUrl: Execute via HTTP instead of local handlers
+            null,          // executeAt
+            "1h",          // cron
+            "https://api.example.com/webhook", // webhookUrl
+            300            // maxExecutionSeconds
         );
         
         // Let the application run
