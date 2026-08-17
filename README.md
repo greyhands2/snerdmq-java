@@ -1,12 +1,12 @@
 <div align="center">
   <img src="./assets/Designer-9.png" height="120" alt="SnerdMQ Java Logo" />
-  <h1>☕ SnerdMQ Java & Kotlin SDK v1.0.1</h1>
+  <h1>☕ SnerdMQ Java & Kotlin SDK v1.0.2</h1>
   <p>A zero-config, C-speed background job queue for the JVM. Ditch Redis and heavy queue workers for a simple, embedded Rust daemon.</p>
 </div>
 
 This is the official JVM SDK wrapper for **SnerdMQ**. It handles all JSON-RPC communication and `ProcessBuilder` orchestration so you can write lightning-fast background jobs in Java, Kotlin, or Scala without managing any external databases like Redis or ActiveMQ.
 
-## ✨ v1.0.1 AI Features
+## ✨ v1.0.2 AI Features
 - **Smart API Rate-Limiting**: Natively tracks `rateLimitGroup` execution velocity to prevent 429 "Too Many Requests" API errors.
 - **Payload-Hashing Deduplication**: Automatically computes cryptographic hashes to drop duplicate tasks instantly.
 - **Dynamic Float Prioritization**: A native Binary Max-Heap bypasses standard FIFO rules for high urgency tasks.
@@ -14,7 +14,7 @@ This is the official JVM SDK wrapper for **SnerdMQ**. It handles all JSON-RPC co
 - **Zero Rust Required**: Our built-in `SnerdmqInstaller` class automatically downloads the pre-compiled C-speed Rust binary for your OS.
 - **Thread-Safe**: Built on top of native Java `ExecutorService` and `ProcessBuilder`, it is heavily optimized for massively concurrent enterprise workloads.
 
-### ⚙️ Advanced Task Configuration (v1.0.1)
+### ⚙️ Advanced Task Configuration (v1.0.2)
 To power complex AI workflows, tasks can now be configured with advanced orchestration parameters:
 
 * **`autoDedupe` (`Boolean`)**: If set to `true`, the daemon computes a cryptographic hash of the `taskType` and `data`. If an identical payload is currently sitting in the queue pending execution, this new task is silently dropped. Excellent for preventing duplicate generative AI requests from trigger-happy users!
@@ -48,7 +48,7 @@ This package is designed to work flawlessly in both modern Gradle projects and l
 Add the dependency to your `build.gradle`:
 ```groovy
 dependencies {
-    implementation 'io.github.greyhands2:snerdmq:1.0.1'
+    implementation 'io.github.greyhands2:snerdmq:1.0.2'
 }
 ```
 
@@ -58,7 +58,7 @@ Add the dependency to your `pom.xml`:
 <dependency>
     <groupId>io.github.greyhands2</groupId>
     <artifactId>snerdmq</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
 </dependency>
 ```
 
@@ -90,7 +90,7 @@ public class App {
         queue.startListening();
         System.out.println("SnerdMQ Java SDK is listening for jobs...");
 
-        // 5. Enqueue a job from anywhere in your codebase (Now with v1.0.1 AI Features!)
+        // 5. Enqueue a job from anywhere in your codebase (Now with v1.0.2 AI Features!)
         queue.enqueue(
             "email-123",
             "send_email",
