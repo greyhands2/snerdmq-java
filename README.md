@@ -50,7 +50,7 @@ This package is designed to work flawlessly in both modern Gradle projects and l
 Add the dependency to your `build.gradle`:
 ```groovy
 dependencies {
-    implementation 'io.github.greyhands2:snerdmq:1.0.3'
+    implementation 'io.github.speed-nerd:snerdmq:1.0.3'
 }
 ```
 
@@ -58,7 +58,7 @@ dependencies {
 Add the dependency to your `pom.xml`:
 ```xml
 <dependency>
-    <groupId>io.github.greyhands2</groupId>
+    <groupId>io.github.speed-nerd</groupId>
     <artifactId>snerdmq</artifactId>
     <version>1.0.3</version>
 </dependency>

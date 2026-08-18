@@ -4,14 +4,14 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>io.github.greyhands2</groupId>
+    <groupId>io.github.speed-nerd</groupId>
     <artifactId>snerdmq</artifactId>
     <version>1.0.3</version>
     <packaging>jar</packaging>
 
     <name>SnerdMQ Java SDK</name>
     <description>The official Java SDK for SnerdMQ</description>
-    <url>https://github.com/greyhands2/snerdmq-java</url>
+    <url>https://github.com/speed-nerd/snerdmq-java</url>
 
     <licenses>
         <license>
@@ -25,14 +25,14 @@
             <name>Tony Starq</name>
             <email>tony@starq.com</email>
             <organization>Greyhands2</organization>
-            <organizationUrl>https://github.com/greyhands2</organizationUrl>
+            <organizationUrl>https://github.com/speed-nerd</organizationUrl>
         </developer>
     </developers>
 
     <scm>
-        <connection>scm:git:git://github.com/greyhands2/snerdmq-java.git</connection>
-        <developerConnection>scm:git:ssh://github.com:greyhands2/snerdmq-java.git</developerConnection>
-        <url>http://github.com/greyhands2/snerdmq-java/tree/main</url>
+        <connection>scm:git:git://github.com/speed-nerd/snerdmq-java.git</connection>
+        <developerConnection>scm:git:ssh://github.com:speed-nerd/snerdmq-java.git</developerConnection>
+        <url>http://github.com/speed-nerd/snerdmq-java/tree/main</url>
     </scm>
 
     <properties>
