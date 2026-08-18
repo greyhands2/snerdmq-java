@@ -2,6 +2,8 @@
   <img src="./assets/Designer-9.png" height="120" alt="SnerdMQ Java Logo" />
   <h1>☕ SnerdMQ Java & Kotlin SDK v1.0.3</h1>
   <p>A zero-config, C-speed background job queue for the JVM. Ditch Redis and heavy queue workers for a simple, embedded Rust daemon.</p>
+
+  [![Docs](https://img.shields.io/badge/docs-speed--nerd.github.io-blue)](https://speed-nerd.github.io/docs/)
 </div>
 
 This is the official JVM SDK wrapper for **SnerdMQ**. It handles all JSON-RPC communication and `ProcessBuilder` orchestration so you can write lightning-fast background jobs in Java, Kotlin, or Scala without managing any external databases like Redis or ActiveMQ.
