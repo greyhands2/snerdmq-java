@@ -182,12 +182,13 @@ public class SnerdQueue {
 
     private synchronized void sendMessage(String json) {
         if (isShuttingDown || writer == null) return;
+        if (process != null && !process.isAlive()) return;
         try {
             writer.write(json);
             writer.newLine();
             writer.flush();
         } catch (IOException e) {
-            e.printStackTrace();
+            // Daemon died, pipe broken — silently ignore
         }
     }
 
