@@ -333,20 +333,25 @@ public class SnerdQueue {
         app.get("/api/stats", ctx -> {
             int enqueued = 0, processed = 0, failed = 0;
             Path tasksPath = Paths.get(this.storagePath != null ? this.storagePath : "./.snerdata", "tasks", "tasks.log");
+            Map<String, String> tasksMap = new java.util.LinkedHashMap<>();
             if (Files.exists(tasksPath)) {
                 try {
                     for (String line : Files.readAllLines(tasksPath)) {
                         if (line.trim().isEmpty()) continue;
-                        enqueued++;
-                        if (line.contains("\"deletedAt\":\"")) {
-                            if (line.contains("\"lastJobError\":\"")) {
-                                failed++;
-                            } else {
-                                processed++;
-                            }
-                        }
+                        String tId = extractJsonField(line, "taskId");
+                        if (tId != null) tasksMap.put(tId, line);
                     }
                 } catch (Exception e) {}
+            }
+            for (String t : tasksMap.values()) {
+                enqueued++;
+                if (t.contains("\"deletedAt\":")) {
+                    if (t.contains("\"LastJobError\":")) {
+                        failed++;
+                    } else {
+                        processed++;
+                    }
+                }
             }
             String result = String.format("{\"enqueued\":%d,\"processed\":%d,\"failed\":%d}", enqueued, processed, failed);
             ctx.contentType("application/json").result(result);
@@ -371,21 +376,49 @@ public class SnerdQueue {
                 String tId = extractJsonField(t, "taskId");
                 String tType = extractJsonField(t, "taskType");
                 String status;
-                if (t.contains("\"deletedAt\":\"")) {
-                    status = t.contains("\"lastJobError\":\"") ? "failed" : "completed";
+                if (t.contains("\"deletedAt\":")) {
+                    String rCountStr = extractJsonNumberField(t, "retryCount");
+                    String mRetriesStr = extractJsonNumberField(t, "maxRetries");
+                    int rCountVal = rCountStr != null ? (int) Double.parseDouble(rCountStr) : 0;
+                    int mRetriesVal = mRetriesStr != null ? (int) Double.parseDouble(mRetriesStr) : 3;
+                    if (t.contains("\"LastJobError\":") && rCountVal >= mRetriesVal) {
+                        status = "dead_letter";
+                    } else if (t.contains("\"LastJobError\":")) {
+                        status = "failed";
+                    } else {
+                        status = "completed";
+                    }
+                } else if (t.contains("\"LastJobError\":")) {
+                    status = "failed";
                 } else {
-                    status = t.contains("\"lastJobError\":\"") ? "failed" : "queued";
+                    String execAt = extractJsonField(t, "executeAt");
+                    if (execAt != null) {
+                        try {
+                            java.time.Instant execTime = java.time.Instant.parse(execAt);
+                            status = execTime.isBefore(java.time.Instant.now()) ? "active" : "queued";
+                        } catch (Exception e) {
+                            status = "queued";
+                        }
+                    } else {
+                        status = "queued";
+                    }
                 }
                 
-                String rCount = extractJsonField(t, "retryCount");
-                String mRetries = extractJsonField(t, "maxRetries");
+                String rCount = extractJsonNumberField(t, "retryCount");
+                String mRetries = extractJsonNumberField(t, "maxRetries");
                 String rAfter = extractJsonField(t, "retryAfterTime");
+                String cronExpr = extractJsonField(t, "cronExpression");
+                String webhookUrl = extractJsonField(t, "webhookUrl");
+                String maxExecSecs = extractJsonNumberField(t, "maxExecutionSeconds");
                 
                 if (!first) sb.append(",");
                 sb.append(String.format("{\"id\":\"%s\",\"type\":\"%s\",\"status\":\"%s\",\"progress\":0", tId, tType, status));
                 if (rCount != null) sb.append(",\"retryCount\":").append(rCount);
                 if (mRetries != null) sb.append(",\"maxRetries\":").append(mRetries);
                 if (rAfter != null) sb.append(",\"retryAfterTime\":\"").append(rAfter).append("\"");
+                if (cronExpr != null) sb.append(",\"cronExpression\":\"").append(cronExpr).append("\"");
+                if (webhookUrl != null) sb.append(",\"webhookUrl\":\"").append(webhookUrl).append("\"");
+                if (maxExecSecs != null) sb.append(",\"maxExecutionSeconds\":").append(maxExecSecs);
                 sb.append("}");
                 first = false;
             }

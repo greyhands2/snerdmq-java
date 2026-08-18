@@ -10,6 +10,7 @@ This is the official JVM SDK wrapper for **SnerdMQ**. It handles all JSON-RPC co
 - **Smart API Rate-Limiting**: Natively tracks `rateLimitGroup` execution velocity to prevent 429 "Too Many Requests" API errors.
 - **Payload-Hashing Deduplication**: Automatically computes cryptographic hashes to drop duplicate tasks instantly.
 - **Dynamic Float Prioritization**: A native Binary Max-Heap bypasses standard FIFO rules for high urgency tasks.
+- **Progress Streaming & Live Dashboard**: Handlers can stream progress updates to a built-in React UI dashboard served by the SDK.
 - **Ditch Redis**: Gives your Spring Boot or Ktor apps persistent state, automatic retries, and dead-letter queues right out of the box with zero external infrastructure.
 - **Zero Rust Required**: Our built-in `SnerdmqInstaller` class automatically downloads the pre-compiled C-speed Rust binary for your OS.
 - **Thread-Safe**: Built on top of native Java `ExecutorService` and `ProcessBuilder`, it is heavily optimized for massively concurrent enterprise workloads.
@@ -22,6 +23,7 @@ To power complex AI workflows, tasks can now be configured with advanced orchest
 * **`rateLimitGroup` (`String`)**: A custom string (e.g. `"openai_api"` or `"db_writes"`) that groups tasks together for backpressure control.
 * **`maxPerMinute` (`Integer`)**: Used in conjunction with `rateLimitGroup`. If the queue processes more tasks in this group than the allowed limit within a 60-second rolling window, further tasks in this group are temporarily paused. This natively prevents 429 "Too Many Requests" errors when bursting third-party APIs.
 * **`executeAt` (`String` | `java.time.Instant`)**: A timestamp of when the job should be executed in the future.
+* **`retryAfterHours` (`double`)**: Backoff in **hours** before a failed job is retried (default `0.0`). See *Cron Jobs vs. Retryable Jobs* below.
 * **`cron` (`String`)**: A cron expression (e.g. `"0 * * * *"`) for recurring jobs. Shorthands like `"2h"` or `"10m"` are also supported.
 * **`webhookUrl` (`String`)**: By providing a webhook URL, SnerdMQ will completely bypass your local Java handlers and dispatch the task payload via an HTTP POST request directly to the specified URL.
 * **`maxExecutionSeconds` (`Integer`)**: Optional hard timeout in seconds. If execution takes longer, it's marked as failed.
@@ -90,21 +92,39 @@ public class App {
         queue.startListening();
         System.out.println("SnerdMQ Java SDK is listening for jobs...");
 
-        // 5. Enqueue a job from anywhere in your codebase (Now with v1.0.2 AI Features!)
+        // 5. Enqueue a job from anywhere in your codebase
         queue.enqueue(
             "email-123",
             "send_email",
             "{\"to\":\"james.gosling@java.com\",\"subject\":\"SnerdMQ Update\"}",
             3,              // max retries
-            0.0,            // retry after hours
+            0.5,            // retry after hours (wait 30 minutes before retrying)
             "email_api",    // rateLimitGroup
             100,            // maxPerMinute
-            true,           // autoDedupe
-            0.99,           // urgencyScore
-            null,          // executeAt
-            "1h",          // cron
-            "https://api.example.com/webhook", // webhookUrl
-            300            // maxExecutionSeconds
+            null,           // autoDedupe
+            null,           // urgencyScore
+            null,           // executeAt
+            null,           // cron
+            null,           // webhookUrl
+            null            // maxExecutionSeconds
+        );
+
+        // 6. Need scheduling, deduplication, or serverless execution? All
+        // orchestration options are opt-in — combine only what you need:
+        queue.enqueue(
+            "email-digest-1",
+            "send_email",
+            "{\"to\":\"james.gosling@java.com\",\"subject\":\"Daily Digest\"}",
+            3,
+            0.0,
+            null,           // no rate limit group
+            null,           // no maxPerMinute cap
+            true,           // autoDedupe: drop identical pending payloads
+            0.99,           // urgencyScore: float to the front of the queue
+            null,
+            "0 8 * * *",    // cron: run every day at 08:00
+            "https://api.example.com/webhook", // Execute via HTTP instead of local handlers
+            300             // maxExecutionSeconds: hard timeout
         );
         
         // Let the application run
@@ -123,6 +143,46 @@ queue.registerMaxRetryHandler("send_email", data -> {
     System.out.println("Email task failed after all retries! Data: " + data);
 });
 ```
+
+---
+
+## 📊 Live Dashboard
+
+SnerdMQ ships with a built-in **React UI dashboard** served directly by the SDK — no extra services or ports to manage in your infrastructure. It gives you a real-time window into your queue:
+
+- **Live stats**: total enqueued, processed, and failed jobs
+- **Recent Jobs table**: per-task status (`queued`, `active`, `completed`, `failed`, `dead_letter`), retry counts, and badges showing which features a task uses (cron / webhook / timeout)
+- **Real-time Progress Stream**: live output from `yieldProgress` calls in your handlers
+
+```java
+SnerdQueue queue = new SnerdQueue();
+
+// Start the built-in dashboard on http://localhost:9090
+queue.startDashboard(9090);
+
+// ... register handlers, start listening, enqueue jobs ...
+```
+
+Then open **http://localhost:9090** in your browser. Updates are pushed to the page over WebSocket the moment jobs change state, and the dashboard also exposes a small JSON API (`/api/stats`, `/api/tasks`, `/api/progress`) if you want to build your own tooling on top.
+
+> **Note:** The dashboard serves its `static/` assets relative to your process's working directory, so run your application from the directory that contains the `static/` folder. `startDashboard` only serves the UI — your jobs keep running whether or not the dashboard is open.
+
+---
+
+## 📡 Progress Reporting
+
+Long-running handlers can stream live updates to the Dashboard's Progress Stream (ideal for streaming LLM tokens or multi-step ETL work):
+
+```java
+queue.registerHandler("generate_report", (jsonData) -> {
+    for (int step = 1; step <= 10; step++) {
+        doWork(step);
+        queue.yieldProgress("Step " + step + "/10 complete");
+    }
+});
+```
+
+> `yieldProgress` must be called **inside a task handler** — the SDK tracks the currently executing task on each worker thread so each update lands on the right job in the dashboard.
 
 ---
 
