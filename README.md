@@ -1,6 +1,6 @@
 <div align="center">
   <img src="./assets/Designer-9.png" height="120" alt="SnerdMQ Java Logo" />
-  <h1>☕ SnerdMQ Java & Kotlin SDK v1.0.3</h1>
+  <h1>☕ SnerdMQ Java & Kotlin SDK v1.0.4</h1>
   <p>A zero-config, C-speed background job queue for the JVM. Ditch Redis and heavy queue workers for a simple, embedded Rust daemon.</p>
 
   [![Docs](https://img.shields.io/badge/docs-speed--nerd.github.io-blue)](https://speed-nerd.github.io/docs/)
@@ -8,7 +8,7 @@
 
 This is the official JVM SDK wrapper for **SnerdMQ**. It handles all JSON-RPC communication and `ProcessBuilder` orchestration so you can write lightning-fast background jobs in Java, Kotlin, or Scala without managing any external databases like Redis or ActiveMQ.
 
-## ✨ v1.0.3 AI Features
+## ✨ v1.0.4 AI Features
 - **Smart API Rate-Limiting**: Natively tracks `rateLimitGroup` execution velocity to prevent 429 "Too Many Requests" API errors.
 - **Payload-Hashing Deduplication**: Automatically computes cryptographic hashes to drop duplicate tasks instantly.
 - **Dynamic Float Prioritization**: A native Binary Max-Heap bypasses standard FIFO rules for high urgency tasks.
@@ -17,7 +17,7 @@ This is the official JVM SDK wrapper for **SnerdMQ**. It handles all JSON-RPC co
 - **Zero Rust Required**: Our built-in `SnerdmqInstaller` class automatically downloads the pre-compiled C-speed Rust binary for your OS.
 - **Thread-Safe**: Built on top of native Java `ExecutorService` and `ProcessBuilder`, it is heavily optimized for massively concurrent enterprise workloads.
 
-### ⚙️ Advanced Task Configuration (v1.0.3)
+### ⚙️ Advanced Task Configuration (v1.0.4)
 To power complex AI workflows, tasks can now be configured with advanced orchestration parameters:
 
 * **`autoDedupe` (`Boolean`)**: If set to `true`, the daemon computes a cryptographic hash of the `taskType` and `data`. If an identical payload is currently sitting in the queue pending execution, this new task is silently dropped. Excellent for preventing duplicate generative AI requests from trigger-happy users!
@@ -52,7 +52,7 @@ This package is designed to work flawlessly in both modern Gradle projects and l
 Add the dependency to your `build.gradle`:
 ```groovy
 dependencies {
-    implementation 'io.github.speed-nerd:snerdmq:1.0.3'
+    implementation 'io.github.speed-nerd:snerdmq:1.0.4'
 }
 ```
 
@@ -62,7 +62,7 @@ Add the dependency to your `pom.xml`:
 <dependency>
     <groupId>io.github.speed-nerd</groupId>
     <artifactId>snerdmq</artifactId>
-    <version>1.0.3</version>
+    <version>1.0.4</version>
 </dependency>
 ```
 
@@ -188,16 +188,82 @@ queue.registerHandler("generate_report", (jsonData) -> {
 
 ---
 
-## 🌍 Advanced: Distributed Scaling
+## 🧩 Queue Topology: One Queue or Many?
 
-By default, the SDK spins up the Rust daemon which writes the queue to a local file (`.snerdata/tasks/tasks.log`). 
+### ✅ Recommended: one queue, all job types (singleton)
 
-If you have multiple Java microservices running behind a load balancer and want them to share the exact same queue, simply mount a **Shared Network Drive** (like AWS EFS or NFS) to all of your servers and pass the shared path:
+Each `SnerdQueue` client spawns its own Rust daemon and **exclusively owns** its storage directory (`.snerdata` by default). The recommended pattern is **one client per application process**: register every job type on it and serve a single shared dashboard:
 
 ```java
-// All of your JVM servers point to the exact same shared file!
-// SnerdMQ's native OS file-locking guarantees zero data corruption.
-SnerdQueue queue = new SnerdQueue(null, "/mnt/aws-efs-shared-drive/snerd_tasks.log");
+import snerdmq.SnerdQueue;
+import snerdmq.SnerdmqInstaller;
+
+public class App {
+    public static void main(String[] args) throws Exception {
+        SnerdmqInstaller.ensureDownloaded();
+
+        // ONE queue client for the whole app
+        SnerdQueue queue = new SnerdQueue();
+
+        // Job type #1: image processing
+        queue.registerHandler("process_image", (jsonData) -> {
+            System.out.println("Processing image: " + jsonData);
+        });
+
+        // Job type #2: OTP emails — same queue, same daemon
+        queue.registerHandler("send_otp_email", (jsonData) -> {
+            System.out.println("Sending OTP: " + jsonData);
+        });
+
+        queue.startListening();
+
+        // Both job types flow through the exact same queue
+        queue.enqueue("img-1", "process_image", "{\"image_id\":\"abc123\"}", 3, 0.5);
+        queue.enqueue("otp-1", "send_otp_email", "{\"to\":\"john@wick.com\"}", 3, 0.5);
+
+        // ONE dashboard shows every job type
+        queue.startDashboard(8080);
+    }
+}
 ```
+
+All job types share everything: the same persistent job log, retry/DLQ pipeline, rate-limit state, stats — and one dashboard at `http://localhost:8080` showing all of them.
+
+### 🚫 Same storage twice = fails fast
+
+The daemon takes an **exclusive OS-level lock** on its storage directory at startup. A second client on the same storage fails instead of silently double-executing your jobs:
+
+```java
+SnerdQueue first = new SnerdQueue();  // ✅ owns .snerdata
+SnerdQueue second = new SnerdQueue(); // ❌ daemon refuses to start:
+// "Another daemon is already running on storage '.snerdata'"
+```
+
+This applies across processes too — multiple JVM services on the same machine each spawn their own daemon, so each needs its own `storagePath`.
+
+### 🔀 Need multiple queues? Give each one its own storage
+
+```java
+SnerdQueue images = new SnerdQueue(null, ".snerdata-images");
+SnerdQueue emails = new SnerdQueue(null, ".snerdata-emails");
+
+images.startDashboard(8080); // separate dashboards, so separate ports
+emails.startDashboard(8081);
+```
+
+Now you have two fully independent engines: separate job logs, separate rate-limit state, separate dashboards. Only split when you actually need isolation (different teams, different retention, independent monitoring) — otherwise the singleton is simpler and recommended.
+
+---
+
+## 🌍 Advanced: Distributed Scaling
+
+Because the daemon exclusively locks its storage directory, scaling horizontally means **one queue per server**, each with its own storage. Your load balancer routes requests across servers, and every server processes the jobs it enqueued:
+
+```java
+// Each server runs its own daemon on its own storage dir (local disk works fine)
+SnerdQueue queue = new SnerdQueue(null, "/var/data/snerd"); // per-server storage
+```
+
+A shared network drive (AWS EFS or NFS) is still a good home for that storage when a single instance needs durable state — e.g. a container that restarts but must keep its queue. Native OS file locking (`flock`) keeps writes safe — no Redis required.
 
 *Built with ❤️ for John Wick tier engineering.*
