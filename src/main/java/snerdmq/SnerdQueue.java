@@ -101,6 +101,14 @@ public class SnerdQueue {
                 }
             } catch (IOException e) {
                 if (!isShuttingDown) e.printStackTrace();
+            } finally {
+                // Engine is gone — it can never ack. Fail all pending enqueues
+                // so callers fail fast instead of blocking on get()/join() forever.
+                for (Map.Entry<String, CompletableFuture<Void>> entry : pendingEnqueues.entrySet()) {
+                    entry.getValue().completeExceptionally(new RuntimeException(
+                        "[Snerd] Engine terminated before ack for task '" + entry.getKey() + "'"));
+                }
+                pendingEnqueues.clear();
             }
         });
 
